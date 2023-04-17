@@ -1,0 +1,20 @@
+build:
+  gpu: true
+  python_version: "3.8"
+  cuda: "11.7"
+
+  python_packages:
+    - ffmpeg-python
+    - tqdm==4.64.0
+    - numpy==1.22.3
+    - transformers==4.19.2
+    - ffmpeg-python==0.2.0
+    - more_itertools==8.14.0
+  system_packages:
+    - "ffmpeg"
+    - "libsndfile1"
+  run:
+    - pip install torch==1.13.1+cu117 torchaudio==0.13.1+cu117 -f https://download.pytorch.org/whl/cu117/torch_stable.html
+    - pip install git+https://github.com/openai/whisper
+
+predict: "predict.py:Predictor"
