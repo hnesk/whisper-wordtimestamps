@@ -8,12 +8,14 @@ wget https://openaipublic.azureedge.net/main/whisper/models/e4b87e7e0bf463eb8e69
 wget https://openaipublic.azureedge.net/main/whisper/models/81f7c96c852ee8fc832187b0132e569d6c3065a3252ed18e56effd0b6a73e524/large-v2.pt  -P ./weights
 """
 
-from typing import Any
 import torch
-import numpy as np
-from cog import BasePredictor, Input, Path, BaseModel
-
 import whisper
+import tempfile
+import numpy as np
+import urllib.request
+
+from typing import Any, Optional
+from cog import BasePredictor, Input, Path, BaseModel
 from whisper.model import Whisper, ModelDimensions
 from whisper.tokenizer import LANGUAGES, TO_LANGUAGE_CODE
 
@@ -30,16 +32,19 @@ class Predictor(BasePredictor):
 
         self.models = {}
 
-    def get_model(self, model: str) -> Any: 
+    def get_model(self, model: str) -> Any:
         if not model in whisper.available_models():
             raise Exception("Model %s not found")
         elif not model in self.models:
-            self.models[model] = whisper.load_model(model, download_root="whisper-cache", device="cuda")
+            self.models[model] = whisper.load_model(
+                model, download_root="whisper-cache", device="cuda"
+            )
         return self.models[model]
 
     def predict(
         self,
-        audio: Path = Input(description="Audio file"),
+        audio: Optional[Path] = Input(description="Audio file"),
+        audio_url: Optional[str] = Input(description="Audio URL"),
         model: str = Input(
             default="base",
             choices=["tiny", "base", "small", "medium", "large-v1", "large-v2"],
@@ -87,7 +92,7 @@ class Predictor(BasePredictor):
             description="if the probability of the <|nospeech|> token is higher than this value AND the decoding has failed due to `logprob_threshold`, consider the segment as silence",
         ),
         word_timestamps: bool = Input(
-            default = False,
+            default=False,
             description="Extract word-level timestamps using the cross-attention pattern and dynamic time warping, and include the timestamps for each word in each segment.",
         ),
         prepend_punctuations: str = Input(
@@ -96,10 +101,9 @@ class Predictor(BasePredictor):
         ),
         append_punctuations: str = Input(
             default="\"'.。,，!！?？:：”)]}、",
-            description="If word_timestamps is True, merge these punctuation symbols with the previous word"
-        )
+            description="If word_timestamps is True, merge these punctuation symbols with the previous word",
+        ),
     ) -> ModelOutput:
-
         """Run a single prediction on the model"""
         print(f"Transcribe with {model} model")
 
@@ -123,15 +127,20 @@ class Predictor(BasePredictor):
             "no_speech_threshold": no_speech_threshold,
             "word_timestamps": word_timestamps,
             "prepend_punctuations": prepend_punctuations,
-            "append_punctuations": append_punctuations
+            "append_punctuations": append_punctuations,
         }
-
-        result = model.transcribe(str(audio), temperature=temperature, **args)
-
+        if audio_url is not None:
+            with tempfile.NamedTemporaryFile(delete=True) as temp_file:
+                filename = temp_file.name
+                http_message, _ = urllib.request.urlretrieve(audio_url, filename)
+                if http_message.status == 200:
+                    raise Exception("Failed to download audio file")
+                result = model.transcribe(filename, temperature=temperature, **args)
+        else:
+            result = model.transcribe(str(audio), temperature=temperature, **args)
 
         return ModelOutput(
             segments=result["segments"],
             detected_language=LANGUAGES[result["language"]],
-            transcription=result["text"]
+            transcription=result["text"],
         )
-
